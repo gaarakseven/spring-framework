@@ -1,11 +1,11 @@
 /*
- * Copyright 2002-2015 the original author or authors.
+ * Copyright 2002-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -126,22 +126,14 @@ public class UrlPathHelperTests {
 	}
 
 	@Test
-	public void getRequestKeepSemicolonContent() throws UnsupportedEncodingException {
+	public void getRequestKeepSemicolonContent() {
 		helper.setRemoveSemicolonContent(false);
 
 		request.setRequestURI("/foo;a=b;c=d");
 		assertEquals("/foo;a=b;c=d", helper.getRequestUri(request));
 
 		request.setRequestURI("/foo;jsessionid=c0o7fszeb1");
-		assertEquals("jsessionid should always be removed", "/foo", helper.getRequestUri(request));
-
-		request.setRequestURI("/foo;a=b;jsessionid=c0o7fszeb1;c=d");
-		assertEquals("jsessionid should always be removed", "/foo;a=b;c=d", helper.getRequestUri(request));
-
-		// SPR-10398
-
-		request.setRequestURI("/foo;a=b;JSESSIONID=c0o7fszeb1;c=d");
-		assertEquals("JSESSIONID should always be removed", "/foo;a=b;c=d", helper.getRequestUri(request));
+		assertEquals("/foo", helper.getRequestUri(request));
 	}
 
 	@Test
@@ -169,7 +161,7 @@ public class UrlPathHelperTests {
 
 	//
 	// suite of tests root requests for default servlets (SRV 11.2) on Websphere vs Tomcat and other containers
-	// see: http://jira.springframework.org/browse/SPR-7064
+	// see: https://jira.springframework.org/browse/SPR-7064
 	//
 
 

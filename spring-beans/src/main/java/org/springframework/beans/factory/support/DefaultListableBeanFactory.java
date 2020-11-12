@@ -1,11 +1,11 @@
 /*
- * Copyright 2002-2018 the original author or authors.
+ * Copyright 2002-2019 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -90,8 +90,7 @@ import org.springframework.util.StringUtils;
  * operating on pre-resolved bean definition metadata objects.
  *
  * <p>Note that readers for specific bean definition formats are typically
- * implemented separately rather than as bean factory subclasses:
- * see for example {@link PropertiesBeanDefinitionReader} and
+ * implemented separately rather than as bean factory subclasses: see for example
  * {@link org.springframework.beans.factory.xml.XmlBeanDefinitionReader}.
  *
  * <p>For an alternative implementation of the
@@ -179,7 +178,7 @@ public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFacto
 	private volatile String[] frozenBeanDefinitionNames;
 
 	/** Whether bean definition metadata may be cached for all beans */
-	private volatile boolean configurationFrozen = false;
+	private volatile boolean configurationFrozen;
 
 
 	/**
@@ -323,7 +322,8 @@ public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFacto
 			this.allowEagerClassLoading = otherListableFactory.allowEagerClassLoading;
 			this.dependencyComparator = otherListableFactory.dependencyComparator;
 			// A clone of the AutowireCandidateResolver since it is potentially BeanFactoryAware...
-			setAutowireCandidateResolver(BeanUtils.instantiateClass(getAutowireCandidateResolver().getClass()));
+			setAutowireCandidateResolver(
+					BeanUtils.instantiateClass(otherListableFactory.getAutowireCandidateResolver().getClass()));
 			// Make resolvable dependencies (e.g. ResourceLoader) available here as well...
 			this.resolvableDependencies.putAll(otherListableFactory.resolvableDependencies);
 		}
@@ -566,15 +566,9 @@ public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFacto
 		return result;
 	}
 
-	/**
-	 * Find a {@link Annotation} of {@code annotationType} on the specified
-	 * bean, traversing its interfaces and super classes if no annotation can be
-	 * found on the given class itself, as well as checking its raw bean class
-	 * if not found on the exposed bean reference (e.g. in case of a proxy).
-	 */
 	@Override
 	public <A extends Annotation> A findAnnotationOnBean(String beanName, Class<A> annotationType)
-			throws NoSuchBeanDefinitionException{
+			throws NoSuchBeanDefinitionException {
 
 		A ann = null;
 		Class<?> beanType = getType(beanName);
@@ -582,11 +576,12 @@ public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFacto
 			ann = AnnotationUtils.findAnnotation(beanType, annotationType);
 		}
 		if (ann == null && containsBeanDefinition(beanName)) {
-			BeanDefinition bd = getMergedBeanDefinition(beanName);
-			if (bd instanceof AbstractBeanDefinition) {
-				AbstractBeanDefinition abd = (AbstractBeanDefinition) bd;
-				if (abd.hasBeanClass()) {
-					ann = AnnotationUtils.findAnnotation(abd.getBeanClass(), annotationType);
+			// Check raw bean class, e.g. in case of a proxy.
+			RootBeanDefinition bd = getMergedLocalBeanDefinition(beanName);
+			if (bd.hasBeanClass()) {
+				Class<?> beanClass = bd.getBeanClass();
+				if (beanClass != beanType) {
+					ann = AnnotationUtils.findAnnotation(beanClass, annotationType);
 				}
 			}
 		}
@@ -865,6 +860,9 @@ public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFacto
 		if (existingDefinition != null || containsSingleton(beanName)) {
 			resetBeanDefinition(beanName);
 		}
+		else if (isConfigurationFrozen()) {
+			clearByTypeCache();
+		}
 	}
 
 	@Override
@@ -914,7 +912,7 @@ public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFacto
 		for (String bdName : this.beanDefinitionNames) {
 			if (!beanName.equals(bdName)) {
 				BeanDefinition bd = this.beanDefinitionMap.get(bdName);
-				if (beanName.equals(bd.getParentName())) {
+				if (bd != null && beanName.equals(bd.getParentName())) {
 					resetBeanDefinition(bdName);
 				}
 			}
@@ -1574,7 +1572,9 @@ public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFacto
 				}
 			}
 			// Lenient fallback: dummy factory in case of original factory not found...
-			return new DefaultListableBeanFactory();
+			DefaultListableBeanFactory dummyFactory = new DefaultListableBeanFactory();
+			dummyFactory.serializationId = this.id;
+			return dummyFactory;
 		}
 	}
 
@@ -1592,7 +1592,7 @@ public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFacto
 
 
 	/**
-	 * A dependency descriptor marker for multiple elements.
+	 * A dependency descriptor for a multi-element declaration with nested elements.
 	 */
 	private static class MultiElementDescriptor extends NestedDependencyDescriptor {
 
@@ -1620,7 +1620,8 @@ public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFacto
 							super.resolveCandidate(beanName, requiredType, beanFactory));
 				}
 			};
-			return Optional.ofNullable(doResolveDependency(descriptorToUse, beanName, null, null));
+			Object result = doResolveDependency(descriptorToUse, beanName, null, null);
+			return (result instanceof Optional ? (Optional<?>) result : Optional.ofNullable(result));
 		}
 	}
 
@@ -1750,10 +1751,11 @@ public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFacto
 
 		@Override
 		public Object getOrderSource(Object obj) {
-			RootBeanDefinition beanDefinition = getRootBeanDefinition(this.instancesToBeanNames.get(obj));
-			if (beanDefinition == null) {
+			String beanName = this.instancesToBeanNames.get(obj);
+			if (beanName == null || !containsBeanDefinition(beanName)) {
 				return null;
 			}
+			RootBeanDefinition beanDefinition = getMergedLocalBeanDefinition(beanName);
 			List<Object> sources = new ArrayList<Object>(2);
 			Method factoryMethod = beanDefinition.getResolvedFactoryMethod();
 			if (factoryMethod != null) {
@@ -1764,16 +1766,6 @@ public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFacto
 				sources.add(targetType);
 			}
 			return sources.toArray();
-		}
-
-		private RootBeanDefinition getRootBeanDefinition(String beanName) {
-			if (beanName != null && containsBeanDefinition(beanName)) {
-				BeanDefinition bd = getMergedBeanDefinition(beanName);
-				if (bd instanceof RootBeanDefinition) {
-					return (RootBeanDefinition) bd;
-				}
-			}
-			return null;
 		}
 	}
 

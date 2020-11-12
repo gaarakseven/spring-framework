@@ -1,11 +1,11 @@
 /*
- * Copyright 2002-2018 the original author or authors.
+ * Copyright 2002-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -108,7 +108,7 @@ public class UriComponentsBuilder implements Cloneable {
 
 	private CompositePathComponentBuilder pathBuilder;
 
-	private final MultiValueMap<String, String> queryParams = new LinkedMultiValueMap<String, String>();
+	private LinkedMultiValueMap<String, String> queryParams = new LinkedMultiValueMap<String, String>();
 
 	private String fragment;
 
@@ -135,7 +135,7 @@ public class UriComponentsBuilder implements Cloneable {
 		this.host = other.host;
 		this.port = other.port;
 		this.pathBuilder = other.pathBuilder.cloneBuilder();
-		this.queryParams.putAll(other.queryParams);
+		this.queryParams = other.queryParams.deepCopy();
 		this.fragment = other.fragment;
 	}
 
@@ -162,7 +162,13 @@ public class UriComponentsBuilder implements Cloneable {
 	}
 
 	/**
-	 * Create a builder that is initialized with the given {@code URI}.
+	 * Create a builder that is initialized from the given {@code URI}.
+	 * <p><strong>Note:</strong> the components in the resulting builder will be
+	 * in fully encoded (raw) form and further changes must also supply values
+	 * that are fully encoded, for example via methods in {@link UriUtils}.
+	 * In addition please use {@link #build(boolean)} with a value of "true" to
+	 * build the {@link UriComponents} instance in order to indicate that the
+	 * components are encoded.
 	 * @param uri the URI to initialize with
 	 * @return the new {@code UriComponentsBuilder}
 	 */
@@ -207,7 +213,7 @@ public class UriComponentsBuilder implements Cloneable {
 			}
 			builder.scheme(scheme);
 			if (opaque) {
-				String ssp = uri.substring(scheme.length()).substring(1);
+				String ssp = uri.substring(scheme.length() + 1);
 				if (StringUtils.hasLength(fragment)) {
 					ssp = ssp.substring(0, ssp.length() - (fragment.length() + 1));
 				}
@@ -275,7 +281,7 @@ public class UriComponentsBuilder implements Cloneable {
 	/**
 	 * Create a new {@code UriComponents} object from the URI associated with
 	 * the given HttpRequest while also overlaying with values from the headers
-	 * "Forwarded" (<a href="http://tools.ietf.org/html/rfc7239">RFC 7239</a>),
+	 * "Forwarded" (<a href="https://tools.ietf.org/html/rfc7239">RFC 7239</a>),
 	 * or "X-Forwarded-Host", "X-Forwarded-Port", and "X-Forwarded-Proto" if
 	 * "Forwarded" is not found.
 	 * <p><strong>Note:</strong> this method uses values from forwarded headers,
@@ -328,11 +334,13 @@ public class UriComponentsBuilder implements Cloneable {
 	}
 
 	/**
-	 * Build a {@code UriComponents} instance from the various components
-	 * contained in this builder.
-	 * @param encoded whether all the components set in this builder are
-	 * encoded ({@code true}) or not ({@code false})
+	 * Variant of {@link #build()} to create a {@link UriComponents} instance
+	 * when components are already fully encoded. This is useful for example if
+	 * the builder was created via {@link UriComponentsBuilder#fromUri(URI)}.
+	 * @param encoded whether the components in this builder are already encoded
 	 * @return the URI components
+	 * @throws IllegalArgumentException if any of the components contain illegal
+	 * characters that should have been encoded.
 	 */
 	public UriComponents build(boolean encoded) {
 		if (this.ssp != null) {
@@ -674,7 +682,7 @@ public class UriComponentsBuilder implements Cloneable {
 
 	/**
 	 * Adapt this builder's scheme+host+port from the given headers, specifically
-	 * "Forwarded" (<a href="http://tools.ietf.org/html/rfc7239">RFC 7239</a>,
+	 * "Forwarded" (<a href="https://tools.ietf.org/html/rfc7239">RFC 7239</a>,
 	 * or "X-Forwarded-Host", "X-Forwarded-Port", and "X-Forwarded-Proto" if
 	 * "Forwarded" is not found.
 	 * @param headers the HTTP headers to consider

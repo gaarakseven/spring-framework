@@ -1,11 +1,11 @@
 /*
- * Copyright 2002-2018 the original author or authors.
+ * Copyright 2002-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -260,7 +260,7 @@ public abstract class MimeTypeUtils {
 			throw new InvalidMimeTypeException(mimeType, "does not contain subtype after '/'");
 		}
 		String type = fullType.substring(0, subIndex);
-		String subtype = fullType.substring(subIndex + 1, fullType.length());
+		String subtype = fullType.substring(subIndex + 1);
 		if (MimeType.WILDCARD_TYPE.equals(type) && !MimeType.WILDCARD_TYPE.equals(subtype)) {
 			throw new InvalidMimeTypeException(mimeType, "wildcard type is legal only in '*/*' (all mime types)");
 		}
@@ -366,7 +366,7 @@ public abstract class MimeTypeUtils {
 	 * <blockquote>audio/basic == text/html</blockquote> <blockquote>audio/basic ==
 	 * audio/wave</blockquote>
 	 * @param mimeTypes the list of mime types to be sorted
-	 * @see <a href="http://tools.ietf.org/html/rfc7231#section-5.3.2">HTTP 1.1: Semantics
+	 * @see <a href="https://tools.ietf.org/html/rfc7231#section-5.3.2">HTTP 1.1: Semantics
 	 * and Content, section 5.3.2</a>
 	 */
 	public static void sortBySpecificity(List<MimeType> mimeTypes) {

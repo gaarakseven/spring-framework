@@ -1,11 +1,11 @@
 /*
- * Copyright 2002-2018 the original author or authors.
+ * Copyright 2002-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -19,6 +19,7 @@ package org.springframework.context.annotation;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.lang.annotation.Annotation;
+import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -85,9 +86,9 @@ import org.springframework.util.StringUtils;
  * another using the {@link Import} annotation).
  *
  * <p>This class helps separate the concern of parsing the structure of a Configuration
- * class from the concern of registering BeanDefinition objects based on the
- * content of that model (with the exception of {@code @ComponentScan} annotations which
- * need to be registered immediately).
+ * class from the concern of registering BeanDefinition objects based on the content of
+ * that model (with the exception of {@code @ComponentScan} annotations which need to be
+ * registered immediately).
  *
  * <p>This ASM-based implementation avoids reflection and eager class loading in order to
  * interoperate effectively with lazy class loading in a Spring ApplicationContext.
@@ -458,7 +459,8 @@ class ConfigurationClassParser {
 			catch (IOException ex) {
 				// Resource not found when trying to open it
 				if (ignoreResourceNotFound &&
-						(ex instanceof FileNotFoundException || ex instanceof UnknownHostException)) {
+						(ex instanceof FileNotFoundException || ex instanceof UnknownHostException ||
+								ex instanceof SocketException)) {
 					if (logger.isInfoEnabled()) {
 						logger.info("Properties location [" + location + "] not resolvable: " + ex.getMessage());
 					}
@@ -473,32 +475,35 @@ class ConfigurationClassParser {
 	private void addPropertySource(PropertySource<?> propertySource) {
 		String name = propertySource.getName();
 		MutablePropertySources propertySources = ((ConfigurableEnvironment) this.environment).getPropertySources();
-		if (propertySources.contains(name) && this.propertySourceNames.contains(name)) {
+
+		if (this.propertySourceNames.contains(name)) {
 			// We've already added a version, we need to extend it
 			PropertySource<?> existing = propertySources.get(name);
-			PropertySource<?> newSource = (propertySource instanceof ResourcePropertySource ?
-					((ResourcePropertySource) propertySource).withResourceName() : propertySource);
-			if (existing instanceof CompositePropertySource) {
-				((CompositePropertySource) existing).addFirstPropertySource(newSource);
-			}
-			else {
-				if (existing instanceof ResourcePropertySource) {
-					existing = ((ResourcePropertySource) existing).withResourceName();
+			if (existing != null) {
+				PropertySource<?> newSource = (propertySource instanceof ResourcePropertySource ?
+						((ResourcePropertySource) propertySource).withResourceName() : propertySource);
+				if (existing instanceof CompositePropertySource) {
+					((CompositePropertySource) existing).addFirstPropertySource(newSource);
 				}
-				CompositePropertySource composite = new CompositePropertySource(name);
-				composite.addPropertySource(newSource);
-				composite.addPropertySource(existing);
-				propertySources.replace(name, composite);
+				else {
+					if (existing instanceof ResourcePropertySource) {
+						existing = ((ResourcePropertySource) existing).withResourceName();
+					}
+					CompositePropertySource composite = new CompositePropertySource(name);
+					composite.addPropertySource(newSource);
+					composite.addPropertySource(existing);
+					propertySources.replace(name, composite);
+				}
+				return;
 			}
 		}
+
+		if (this.propertySourceNames.isEmpty()) {
+			propertySources.addLast(propertySource);
+		}
 		else {
-			if (this.propertySourceNames.isEmpty()) {
-				propertySources.addLast(propertySource);
-			}
-			else {
-				String firstProcessed = this.propertySourceNames.get(this.propertySourceNames.size() - 1);
-				propertySources.addBefore(firstProcessed, propertySource);
-			}
+			String firstProcessed = this.propertySourceNames.get(this.propertySourceNames.size() - 1);
+			propertySources.addBefore(firstProcessed, propertySource);
 		}
 		this.propertySourceNames.add(name);
 	}
@@ -675,7 +680,7 @@ class ConfigurationClassParser {
 	}
 
 	/**
-	 * Factory method to obtain {@link SourceClass}s from class names.
+	 * Factory method to obtain a {@link SourceClass} collection from class names.
 	 */
 	private Collection<SourceClass> asSourceClasses(String[] classNames) throws IOException {
 		List<SourceClass> annotatedClasses = new ArrayList<SourceClass>(classNames.length);
@@ -814,7 +819,7 @@ class ConfigurationClassParser {
 			return new AssignableTypeFilter(clazz).match((MetadataReader) this.source, metadataReaderFactory);
 		}
 
-		public ConfigurationClass asConfigClass(ConfigurationClass importedBy) throws IOException {
+		public ConfigurationClass asConfigClass(ConfigurationClass importedBy) {
 			if (this.source instanceof Class) {
 				return new ConfigurationClass((Class<?>) this.source, importedBy);
 			}
@@ -882,7 +887,7 @@ class ConfigurationClassParser {
 			return result;
 		}
 
-		public Set<SourceClass> getAnnotations() throws IOException {
+		public Set<SourceClass> getAnnotations() {
 			Set<SourceClass> result = new LinkedHashSet<SourceClass>();
 			for (String className : this.metadata.getAnnotationTypes()) {
 				try {

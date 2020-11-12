@@ -1,11 +1,11 @@
 /*
- * Copyright 2002-2018 the original author or authors.
+ * Copyright 2002-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -30,11 +30,11 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
 
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.BeanWrapper;
@@ -142,16 +142,16 @@ public abstract class AbstractBeanFactory extends FactoryBeanRegistrySupport imp
 	private TypeConverter typeConverter;
 
 	/** String resolvers to apply e.g. to annotation attribute values */
-	private final List<StringValueResolver> embeddedValueResolvers = new CopyOnWriteArrayList<StringValueResolver>();
+	private final List<StringValueResolver> embeddedValueResolvers = new LinkedList<StringValueResolver>();
 
 	/** BeanPostProcessors to apply in createBean */
-	private volatile List<BeanPostProcessor> beanPostProcessors = new ArrayList<BeanPostProcessor>();
+	private final List<BeanPostProcessor> beanPostProcessors = new ArrayList<BeanPostProcessor>();
 
 	/** Indicates whether any InstantiationAwareBeanPostProcessors have been registered */
-	private volatile boolean hasInstantiationAwareBeanPostProcessors;
+	private boolean hasInstantiationAwareBeanPostProcessors;
 
 	/** Indicates whether any DestructionAwareBeanPostProcessors have been registered */
-	private volatile boolean hasDestructionAwareBeanPostProcessors;
+	private boolean hasDestructionAwareBeanPostProcessors;
 
 	/** Map from scope identifier String to corresponding Scope */
 	private final Map<String, Scope> scopes = new LinkedHashMap<String, Scope>(8);
@@ -509,12 +509,21 @@ public abstract class AbstractBeanFactory extends FactoryBeanRegistrySupport imp
 					// Generics potentially only match on the target class, not on the proxy...
 					RootBeanDefinition mbd = getMergedLocalBeanDefinition(beanName);
 					Class<?> targetType = mbd.getTargetType();
-					if (targetType != null && targetType != ClassUtils.getUserClass(beanInstance) &&
-							typeToMatch.isAssignableFrom(targetType)) {
+					if (targetType != null && targetType != ClassUtils.getUserClass(beanInstance)) {
 						// Check raw class match as well, making sure it's exposed on the proxy.
 						Class<?> classToMatch = typeToMatch.resolve();
-						return (classToMatch == null || classToMatch.isInstance(beanInstance));
+						if (classToMatch != null && !classToMatch.isInstance(beanInstance)) {
+							return false;
+						}
+						if (typeToMatch.isAssignableFrom(targetType)) {
+							return true;
+						}
 					}
+					ResolvableType resolvableType = mbd.targetType;
+					if (resolvableType == null) {
+						resolvableType = mbd.factoryMethodReturnType;
+					}
+					return (resolvableType != null && typeToMatch.isAssignableFrom(resolvableType));
 				}
 			}
 			return false;
@@ -845,22 +854,14 @@ public abstract class AbstractBeanFactory extends FactoryBeanRegistrySupport imp
 	@Override
 	public void addBeanPostProcessor(BeanPostProcessor beanPostProcessor) {
 		Assert.notNull(beanPostProcessor, "BeanPostProcessor must not be null");
-		// Local copy set into volatile field, as an alternative to CopyOnWriteArrayList
-		// (which doesn't support Iterator.remove for our getBeanPostProcessors result List)
-		List<BeanPostProcessor> beanPostProcessors = new ArrayList<BeanPostProcessor>();
-		beanPostProcessors.addAll(this.beanPostProcessors);
-		// Remove from old position, if any
-		beanPostProcessors.remove(beanPostProcessor);
-		// Track whether it is instantiation/destruction aware
+		this.beanPostProcessors.remove(beanPostProcessor);
+		this.beanPostProcessors.add(beanPostProcessor);
 		if (beanPostProcessor instanceof InstantiationAwareBeanPostProcessor) {
 			this.hasInstantiationAwareBeanPostProcessors = true;
 		}
 		if (beanPostProcessor instanceof DestructionAwareBeanPostProcessor) {
 			this.hasDestructionAwareBeanPostProcessors = true;
 		}
-		// Add to end of list
-		beanPostProcessors.add(beanPostProcessor);
-		this.beanPostProcessors = beanPostProcessors;
 	}
 
 	@Override
@@ -878,7 +879,7 @@ public abstract class AbstractBeanFactory extends FactoryBeanRegistrySupport imp
 
 	/**
 	 * Return whether this factory holds a InstantiationAwareBeanPostProcessor
-	 * that will get applied to singleton beans on shutdown.
+	 * that will get applied to singleton beans on creation.
 	 * @see #addBeanPostProcessor
 	 * @see org.springframework.beans.factory.config.InstantiationAwareBeanPostProcessor
 	 */
@@ -1279,7 +1280,7 @@ public abstract class AbstractBeanFactory extends FactoryBeanRegistrySupport imp
 							else {
 								throw new NoSuchBeanDefinitionException(parentBeanName,
 										"Parent name '" + parentBeanName + "' is equal to bean name '" + beanName +
-										"': cannot be resolved without an AbstractBeanFactory parent");
+										"': cannot be resolved without a ConfigurableBeanFactory parent");
 							}
 						}
 					}
@@ -1294,7 +1295,7 @@ public abstract class AbstractBeanFactory extends FactoryBeanRegistrySupport imp
 
 				// Set default singleton scope, if not configured before.
 				if (!StringUtils.hasLength(mbd.getScope())) {
-					mbd.setScope(RootBeanDefinition.SCOPE_SINGLETON);
+					mbd.setScope(SCOPE_SINGLETON);
 				}
 
 				// A bean contained in a non-singleton bean cannot be a singleton itself.
@@ -1371,6 +1372,7 @@ public abstract class AbstractBeanFactory extends FactoryBeanRegistrySupport imp
 	 */
 	protected Class<?> resolveBeanClass(final RootBeanDefinition mbd, String beanName, final Class<?>... typesToMatch)
 			throws CannotLoadBeanClassException {
+
 		try {
 			if (mbd.hasBeanClass()) {
 				return mbd.getBeanClass();
@@ -1506,7 +1508,7 @@ public abstract class AbstractBeanFactory extends FactoryBeanRegistrySupport imp
 	 * should be used as fallback.
 	 * @param beanName the name of the bean
 	 * @param mbd the merged bean definition for the bean
-	 * @return the type for the bean if determinable, or {@code null} else
+	 * @return the type for the bean if determinable, or {@code null} otherwise
 	 * @see org.springframework.beans.factory.FactoryBean#getObjectType()
 	 * @see #getBean(String)
 	 */
